@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (_req, res) => {
-  res.send("Spendly API is running 🚀");
+  res.status(200).send("Spendly API is running 🚀");
 });
 
 app.use("/auth", authRoutes);
