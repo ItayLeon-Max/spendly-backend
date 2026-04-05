@@ -1,10 +1,33 @@
 import { prisma } from "../config/prisma.js";
+const allowedMoods = [
+    "happy",
+    "stressed",
+    "spontaneous",
+    "tired",
+    "treatingMyself"
+];
 const getExpenseIdFromParams = (req) => {
     const rawExpenseId = req.params.expenseId;
     if (typeof rawExpenseId !== "string" || rawExpenseId.trim() === "") {
         return null;
     }
     return rawExpenseId;
+};
+const parseMood = (rawMood) => {
+    if (rawMood === undefined) {
+        return undefined;
+    }
+    if (rawMood === null || rawMood === "") {
+        return null;
+    }
+    if (typeof rawMood !== "string") {
+        return undefined;
+    }
+    const trimmedMood = rawMood.trim();
+    if (!allowedMoods.includes(trimmedMood)) {
+        return undefined;
+    }
+    return trimmedMood;
 };
 export const getExpenses = async (req, res) => {
     try {
@@ -31,9 +54,7 @@ export const getExpenses = async (req, res) => {
         if (category && category !== "All") {
             where.category = category;
         }
-        const orderBy = sortBy === "amount"
-            ? { amount: sortOrder }
-            : { date: sortOrder };
+        const orderBy = sortBy === "amount" ? { amount: sortOrder } : { date: sortOrder };
         const [expenses, totalCount] = await Promise.all([
             prisma.expense.findMany({
                 where,
@@ -69,7 +90,7 @@ export const createExpense = async (req, res) => {
                 message: "Unauthorized"
             });
         }
-        const { title, amount, category, date } = req.body;
+        const { title, amount, category, mood, isNeed, date } = req.body;
         if (!title || amount === undefined || !category) {
             return res.status(400).json({
                 message: "title, amount and category are required"
@@ -81,14 +102,34 @@ export const createExpense = async (req, res) => {
                 message: "amount must be a valid positive number"
             });
         }
-        const expense = await prisma.expense.create({
-            data: {
-                title: String(title).trim(),
-                amount: parsedAmount,
-                category: String(category).trim(),
-                date: date ? new Date(date) : new Date(),
-                userId: req.user.userId
+        const parsedMood = parseMood(mood);
+        if (mood !== undefined && parsedMood === undefined) {
+            return res.status(400).json({
+                message: "mood is invalid"
+            });
+        }
+        if (isNeed !== undefined && typeof isNeed !== "boolean") {
+            return res.status(400).json({
+                message: "isNeed must be a boolean"
+            });
+        }
+        const createData = {
+            title: String(title).trim(),
+            amount: parsedAmount,
+            category: String(category).trim(),
+            isNeed: typeof isNeed === "boolean" ? isNeed : true,
+            date: date ? new Date(date) : new Date(),
+            user: {
+                connect: {
+                    id: req.user.userId
+                }
             }
+        };
+        if (parsedMood !== undefined) {
+            createData.mood = parsedMood;
+        }
+        const expense = await prisma.expense.create({
+            data: createData
         });
         return res.status(201).json(expense);
     }
@@ -111,7 +152,7 @@ export const updateExpense = async (req, res) => {
                 message: "Invalid expenseId"
             });
         }
-        const { title, amount, category, date } = req.body;
+        const { title, amount, category, mood, isNeed, date } = req.body;
         const existingExpense = await prisma.expense.findFirst({
             where: {
                 id: expenseId,
@@ -150,6 +191,23 @@ export const updateExpense = async (req, res) => {
                 });
             }
             updateData.category = cleanCategory;
+        }
+        if (mood !== undefined) {
+            const parsedMood = parseMood(mood);
+            if (parsedMood === undefined) {
+                return res.status(400).json({
+                    message: "mood is invalid"
+                });
+            }
+            updateData.mood = parsedMood;
+        }
+        if (isNeed !== undefined) {
+            if (typeof isNeed !== "boolean") {
+                return res.status(400).json({
+                    message: "isNeed must be a boolean"
+                });
+            }
+            updateData.isNeed = isNeed;
         }
         if (date !== undefined) {
             updateData.date = new Date(date);

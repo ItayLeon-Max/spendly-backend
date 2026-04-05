@@ -2,6 +2,14 @@ import type { Request, Response } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma.js";
 
+const allowedMoods = [
+  "happy",
+  "stressed",
+  "spontaneous",
+  "tired",
+  "treatingMyself"
+] as const;
+
 const getExpenseIdFromParams = (req: Request): string | null => {
   const rawExpenseId = req.params.expenseId;
 
@@ -10,6 +18,30 @@ const getExpenseIdFromParams = (req: Request): string | null => {
   }
 
   return rawExpenseId;
+};
+
+const parseMood = (
+  rawMood: unknown
+): (typeof allowedMoods)[number] | null | undefined => {
+  if (rawMood === undefined) {
+    return undefined;
+  }
+
+  if (rawMood === null || rawMood === "") {
+    return null;
+  }
+
+  if (typeof rawMood !== "string") {
+    return undefined;
+  }
+
+  const trimmedMood = rawMood.trim();
+
+  if (!allowedMoods.includes(trimmedMood as (typeof allowedMoods)[number])) {
+    return undefined;
+  }
+
+  return trimmedMood as (typeof allowedMoods)[number];
 };
 
 export const getExpenses = async (req: Request, res: Response) => {
@@ -30,11 +62,9 @@ export const getExpenses = async (req: Request, res: Response) => {
     const category =
       typeof req.query.category === "string" ? req.query.category.trim() : "";
 
-    const sortBy =
-      req.query.sortBy === "amount" ? "amount" : "date";
+    const sortBy = req.query.sortBy === "amount" ? "amount" : "date";
 
-    const sortOrder =
-      req.query.sortOrder === "asc" ? "asc" : "desc";
+    const sortOrder = req.query.sortOrder === "asc" ? "asc" : "desc";
 
     const where: Prisma.ExpenseWhereInput = {
       userId: req.user.userId
@@ -51,9 +81,7 @@ export const getExpenses = async (req: Request, res: Response) => {
     }
 
     const orderBy: Prisma.ExpenseOrderByWithRelationInput =
-      sortBy === "amount"
-        ? { amount: sortOrder }
-        : { date: sortOrder };
+      sortBy === "amount" ? { amount: sortOrder } : { date: sortOrder };
 
     const [expenses, totalCount] = await Promise.all([
       prisma.expense.findMany({
@@ -93,7 +121,7 @@ export const createExpense = async (req: Request, res: Response) => {
       });
     }
 
-    const { title, amount, category, date } = req.body;
+    const { title, amount, category, mood, isNeed, date } = req.body;
 
     if (!title || amount === undefined || !category) {
       return res.status(400).json({
@@ -109,14 +137,39 @@ export const createExpense = async (req: Request, res: Response) => {
       });
     }
 
-    const expense = await prisma.expense.create({
-      data: {
-        title: String(title).trim(),
-        amount: parsedAmount,
-        category: String(category).trim(),
-        date: date ? new Date(date) : new Date(),
-        userId: req.user.userId
+    const parsedMood = parseMood(mood);
+
+    if (mood !== undefined && parsedMood === undefined) {
+      return res.status(400).json({
+        message: "mood is invalid"
+      });
+    }
+
+    if (isNeed !== undefined && typeof isNeed !== "boolean") {
+      return res.status(400).json({
+        message: "isNeed must be a boolean"
+      });
+    }
+
+    const createData: Prisma.ExpenseCreateInput = {
+      title: String(title).trim(),
+      amount: parsedAmount,
+      category: String(category).trim(),
+      isNeed: typeof isNeed === "boolean" ? isNeed : true,
+      date: date ? new Date(date) : new Date(),
+      user: {
+        connect: {
+          id: req.user.userId
+        }
       }
+    };
+
+    if (parsedMood !== undefined) {
+      createData.mood = parsedMood;
+    }
+
+    const expense = await prisma.expense.create({
+      data: createData
     });
 
     return res.status(201).json(expense);
@@ -143,7 +196,7 @@ export const updateExpense = async (req: Request, res: Response) => {
       });
     }
 
-    const { title, amount, category, date } = req.body;
+    const { title, amount, category, mood, isNeed, date } = req.body;
 
     const existingExpense = await prisma.expense.findFirst({
       where: {
@@ -158,12 +211,7 @@ export const updateExpense = async (req: Request, res: Response) => {
       });
     }
 
-    const updateData: {
-      title?: string;
-      amount?: number;
-      category?: string;
-      date?: Date;
-    } = {};
+    const updateData: Prisma.ExpenseUpdateInput = {};
 
     if (title !== undefined) {
       const cleanTitle = String(title).trim();
@@ -199,6 +247,28 @@ export const updateExpense = async (req: Request, res: Response) => {
       }
 
       updateData.category = cleanCategory;
+    }
+
+    if (mood !== undefined) {
+      const parsedMood = parseMood(mood);
+
+      if (parsedMood === undefined) {
+        return res.status(400).json({
+          message: "mood is invalid"
+        });
+      }
+
+      updateData.mood = parsedMood;
+    }
+
+    if (isNeed !== undefined) {
+      if (typeof isNeed !== "boolean") {
+        return res.status(400).json({
+          message: "isNeed must be a boolean"
+        });
+      }
+
+      updateData.isNeed = isNeed;
     }
 
     if (date !== undefined) {

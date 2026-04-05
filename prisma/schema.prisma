@@ -7,6 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ExpenseMood {
+  happy
+  stressed
+  spontaneous
+  tired
+  treatingMyself
+}
+
 model User {
   id             String    @id @default(uuid())
   fullName       String
@@ -19,15 +27,17 @@ model User {
 }
 
 model Expense {
-  id         String   @id @default(uuid())
+  id         String       @id @default(uuid())
   title      String
   amount     Float
   category   String
-  date       DateTime @default(now())
-  createdAt  DateTime @default(now())
+  mood       ExpenseMood?
+  isNeed     Boolean      @default(true)
+  date       DateTime     @default(now())
+  createdAt  DateTime     @default(now())
 
   userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
