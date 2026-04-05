@@ -4,6 +4,7 @@ import cors from "cors";
 import authRoutes from "./routes/auth.routes.js";
 import expenseRoutes from "./routes/expense.routes.js";
 import userRoutes from "./routes/user.routes.js";
+import insightsRoutes from "./routes/insights.routes.js";
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.get("/", (_req, res) => {
 app.use("/auth", authRoutes);
 app.use("/expenses", expenseRoutes);
 app.use("/users", userRoutes);
+app.use("/insights", insightsRoutes);
 
 const PORT = Number(process.env.PORT) || 3000;
 
