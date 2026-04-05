@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "printenv | grep CLOUDINARY; printenv | grep JWT_SECRET; node dist/server.js",
+    "start": "printenv | grep TEST_VAR; printenv | grep CLOUDINARY; printenv | grep JWT_SECRET; node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy"
   },
