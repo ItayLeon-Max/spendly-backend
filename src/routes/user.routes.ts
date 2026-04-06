@@ -4,6 +4,7 @@ import { upload } from "../middlewares/upload.middleware.js";
 import {
   getCurrentUser,
   removeProfileImage,
+  setupSmartBudget,
   updateMonthlyBudget,
   uploadProfileImage
 } from "../controllers/user.controller.js";
@@ -12,6 +13,8 @@ const router = Router();
 
 router.get("/me", requireAuth, getCurrentUser);
 router.patch("/me/budget", requireAuth, updateMonthlyBudget);
+router.post("/me/budget/setup", requireAuth, setupSmartBudget);
+
 router.post("/me/profile-image", requireAuth, upload.single("image"), uploadProfileImage);
 router.delete("/me/profile-image", requireAuth, removeProfileImage);
 

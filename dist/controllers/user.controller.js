@@ -1,23 +1,23 @@
 import streamifier from "streamifier";
 import { prisma } from "../config/prisma.js";
 import { cloudinary } from "../config/cloudinary.js";
+// ===============================
+// GET CURRENT USER
+// ===============================
 export const getCurrentUser = async (req, res) => {
     try {
-        if (!req.user?.userId) {
+        const userId = req.user?.userId;
+        if (!userId) {
             return res.status(401).json({
                 message: "Unauthorized"
             });
         }
         const user = await prisma.user.findUnique({
             where: {
-                id: req.user.userId
+                id: userId
             },
-            select: {
-                id: true,
-                fullName: true,
-                email: true,
-                monthlyBudget: true,
-                profileImage: true
+            include: {
+                budgetAllocations: true
             }
         });
         if (!user) {
@@ -33,9 +33,13 @@ export const getCurrentUser = async (req, res) => {
         });
     }
 };
+// ===============================
+// UPDATE MONTHLY BUDGET (ישן נשאר)
+// ===============================
 export const updateMonthlyBudget = async (req, res) => {
     try {
-        if (!req.user?.userId) {
+        const userId = req.user?.userId;
+        if (!userId) {
             return res.status(401).json({
                 message: "Unauthorized"
             });
@@ -49,17 +53,13 @@ export const updateMonthlyBudget = async (req, res) => {
         }
         const updatedUser = await prisma.user.update({
             where: {
-                id: req.user.userId
+                id: userId
             },
             data: {
                 monthlyBudget: parsedBudget
             },
-            select: {
-                id: true,
-                fullName: true,
-                email: true,
-                monthlyBudget: true,
-                profileImage: true
+            include: {
+                budgetAllocations: true
             }
         });
         return res.status(200).json(updatedUser);
@@ -70,9 +70,93 @@ export const updateMonthlyBudget = async (req, res) => {
         });
     }
 };
+// ===============================
+// NEW: SMART BUDGET SETUP
+// ===============================
+export const setupSmartBudget = async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({
+                message: "Unauthorized"
+            });
+        }
+        const { monthlyIncome, managedBudget } = req.body;
+        const income = Number(monthlyIncome);
+        const budget = Number(managedBudget);
+        if (Number.isNaN(income) || income <= 0) {
+            return res.status(400).json({
+                message: "Invalid monthly income"
+            });
+        }
+        if (Number.isNaN(budget) || budget <= 0) {
+            return res.status(400).json({
+                message: "Invalid managed budget"
+            });
+        }
+        const allocations = [
+            { category: "food", percent: 0.25 },
+            { category: "transport", percent: 0.10 },
+            { category: "shopping", percent: 0.15 },
+            { category: "bills", percent: 0.25 },
+            { category: "entertainment", percent: 0.15 },
+            { category: "health", percent: 0.10 }
+        ];
+        const computedAllocations = allocations.map((allocation) => ({
+            category: allocation.category,
+            amount: Math.round(budget * allocation.percent)
+        }));
+        await prisma.$transaction([
+            prisma.user.update({
+                where: {
+                    id: userId
+                },
+                data: {
+                    monthlyIncome: income,
+                    managedBudget: budget,
+                    monthlyBudget: budget
+                }
+            }),
+            prisma.budgetAllocation.deleteMany({
+                where: {
+                    userId
+                }
+            }),
+            prisma.budgetAllocation.createMany({
+                data: computedAllocations.map((allocation) => ({
+                    userId,
+                    category: allocation.category,
+                    amount: allocation.amount
+                }))
+            })
+        ]);
+        const updatedUser = await prisma.user.findUnique({
+            where: {
+                id: userId
+            },
+            include: {
+                budgetAllocations: true
+            }
+        });
+        return res.status(200).json({
+            message: "Smart budget created successfully",
+            user: updatedUser
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            message: "Server error while creating smart budget"
+        });
+    }
+};
+// ===============================
+// UPLOAD PROFILE IMAGE
+// ===============================
 export const uploadProfileImage = async (req, res) => {
     try {
-        if (!req.user?.userId) {
+        const userId = req.user?.userId;
+        if (!userId) {
             return res.status(401).json({
                 message: "Unauthorized"
             });
@@ -85,7 +169,7 @@ export const uploadProfileImage = async (req, res) => {
         }
         const existingUser = await prisma.user.findUnique({
             where: {
-                id: req.user.userId
+                id: userId
             },
             select: {
                 profileImage: true
@@ -95,7 +179,7 @@ export const uploadProfileImage = async (req, res) => {
             const uploadStream = cloudinary.uploader.upload_stream({
                 folder: "spendly/profile-images",
                 resource_type: "image",
-                public_id: `user_${req.user.userId}_${Date.now()}`
+                public_id: `user_${userId}_${Date.now()}`
             }, (error, result) => {
                 if (error || !result) {
                     reject(error ?? new Error("Cloudinary upload failed"));
@@ -118,17 +202,13 @@ export const uploadProfileImage = async (req, res) => {
         }
         const updatedUser = await prisma.user.update({
             where: {
-                id: req.user.userId
+                id: userId
             },
             data: {
                 profileImage: uploadResult.secure_url
             },
-            select: {
-                id: true,
-                fullName: true,
-                email: true,
-                monthlyBudget: true,
-                profileImage: true
+            include: {
+                budgetAllocations: true
             }
         });
         return res.status(200).json({
@@ -143,16 +223,20 @@ export const uploadProfileImage = async (req, res) => {
         });
     }
 };
+// ===============================
+// REMOVE PROFILE IMAGE
+// ===============================
 export const removeProfileImage = async (req, res) => {
     try {
-        if (!req.user?.userId) {
+        const userId = req.user?.userId;
+        if (!userId) {
             return res.status(401).json({
                 message: "Unauthorized"
             });
         }
         const existingUser = await prisma.user.findUnique({
             where: {
-                id: req.user.userId
+                id: userId
             },
             select: {
                 profileImage: true
@@ -169,17 +253,13 @@ export const removeProfileImage = async (req, res) => {
         }
         const updatedUser = await prisma.user.update({
             where: {
-                id: req.user.userId
+                id: userId
             },
             data: {
                 profileImage: null
             },
-            select: {
-                id: true,
-                fullName: true,
-                email: true,
-                monthlyBudget: true,
-                profileImage: true
+            include: {
+                budgetAllocations: true
             }
         });
         return res.status(200).json(updatedUser);

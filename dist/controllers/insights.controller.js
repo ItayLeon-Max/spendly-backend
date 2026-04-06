@@ -170,3 +170,85 @@ export const getMonthlyStory = async (req, res) => {
         });
     }
 };
+export const getHomeInsights = async (req, res) => {
+    try {
+        if (!req.user?.userId) {
+            return res.status(401).json({
+                message: "Unauthorized"
+            });
+        }
+        const expenses = await prisma.expense.findMany({
+            where: {
+                userId: req.user.userId
+            },
+            select: {
+                amount: true,
+                category: true,
+                mood: true,
+                isNeed: true,
+                date: true
+            },
+            orderBy: {
+                date: "desc"
+            }
+        });
+        if (expenses.length === 0) {
+            return res.status(200).json({
+                mostCommonMood: null,
+                needsPercentage: 0,
+                wantsPercentage: 0,
+                smartInsight: null
+            });
+        }
+        const totalCount = expenses.length;
+        const needsCount = expenses.filter((expense) => expense.isNeed).length;
+        const wantsCount = totalCount - needsCount;
+        const needsPercentage = roundToTwo((needsCount / totalCount) * 100);
+        const wantsPercentage = roundToTwo((wantsCount / totalCount) * 100);
+        const moodTotals = new Map();
+        const moodExpenseCounts = new Map();
+        const moodCategoryTotals = new Map();
+        for (const expense of expenses) {
+            if (!expense.mood) {
+                continue;
+            }
+            moodTotals.set(expense.mood, roundToTwo((moodTotals.get(expense.mood) ?? 0) + expense.amount));
+            moodExpenseCounts.set(expense.mood, (moodExpenseCounts.get(expense.mood) ?? 0) + 1);
+            if (!moodCategoryTotals.has(expense.mood)) {
+                moodCategoryTotals.set(expense.mood, new Map());
+            }
+            const categoryMap = moodCategoryTotals.get(expense.mood);
+            categoryMap.set(expense.category, roundToTwo((categoryMap.get(expense.category) ?? 0) + expense.amount));
+        }
+        const mostCommonMoodEntry = [...moodExpenseCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
+        const mostCommonMood = mostCommonMoodEntry?.[0] ?? null;
+        let smartInsight = null;
+        if (mostCommonMood) {
+            const topCategoryForMood = [...(moodCategoryTotals.get(mostCommonMood)?.entries() ?? [])].sort((a, b) => b[1] - a[1])[0] ?? null;
+            if (topCategoryForMood) {
+                smartInsight = `You tend to spend more on ${topCategoryForMood[0]} when you're ${mostCommonMood}.`;
+            }
+            else {
+                smartInsight = `Your most common spending mood is ${mostCommonMood}.`;
+            }
+        }
+        else if (wantsPercentage >= 60) {
+            smartInsight = "A large share of your expenses are wants rather than needs.";
+        }
+        else if (needsPercentage >= 70) {
+            smartInsight = "Most of your spending is focused on essential needs.";
+        }
+        return res.status(200).json({
+            mostCommonMood,
+            needsPercentage,
+            wantsPercentage,
+            smartInsight
+        });
+    }
+    catch (error) {
+        console.error("getHomeInsights error:", error);
+        return res.status(500).json({
+            message: "Server error while building home insights"
+        });
+    }
+};
