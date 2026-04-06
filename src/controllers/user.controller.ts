@@ -7,6 +7,20 @@ type UploadResult = {
   secure_url: string;
 };
 
+type BudgetAllocationInput = {
+  category: string;
+  amount: number;
+};
+
+const allowedBudgetCategories = [
+  "food",
+  "transport",
+  "shopping",
+  "bills",
+  "entertainment",
+  "health"
+] as const;
+
 // ===============================
 // GET CURRENT USER
 // ===============================
@@ -25,7 +39,11 @@ export const getCurrentUser = async (req: Request, res: Response) => {
         id: userId
       },
       include: {
-        budgetAllocations: true
+        budgetAllocations: {
+          orderBy: {
+            category: "asc"
+          }
+        }
       }
     });
 
@@ -73,7 +91,11 @@ export const updateMonthlyBudget = async (req: Request, res: Response) => {
         monthlyBudget: parsedBudget
       },
       include: {
-        budgetAllocations: true
+        budgetAllocations: {
+          orderBy: {
+            category: "asc"
+          }
+        }
       }
     });
 
@@ -159,7 +181,11 @@ export const setupSmartBudget = async (req: Request, res: Response) => {
         id: userId
       },
       include: {
-        budgetAllocations: true
+        budgetAllocations: {
+          orderBy: {
+            category: "asc"
+          }
+        }
       }
     });
 
@@ -172,6 +198,115 @@ export const setupSmartBudget = async (req: Request, res: Response) => {
 
     return res.status(500).json({
       message: "Server error while creating smart budget"
+    });
+  }
+};
+
+// ===============================
+// NEW: UPDATE BUDGET ALLOCATIONS
+// ===============================
+export const updateBudgetAllocations = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    const { allocations } = req.body as {
+      allocations?: BudgetAllocationInput[];
+    };
+
+    if (!Array.isArray(allocations) || allocations.length === 0) {
+      return res.status(400).json({
+        message: "allocations must be a non-empty array"
+      });
+    }
+
+    const sanitizedAllocations = allocations.map((allocation) => ({
+      category:
+        typeof allocation.category === "string"
+          ? allocation.category.trim().toLowerCase()
+          : "",
+      amount: Number(allocation.amount)
+    }));
+
+    const hasInvalidCategory = sanitizedAllocations.some(
+      (allocation) =>
+        !allowedBudgetCategories.includes(
+          allocation.category as (typeof allowedBudgetCategories)[number]
+        )
+    );
+
+    if (hasInvalidCategory) {
+      return res.status(400).json({
+        message: "One or more categories are invalid"
+      });
+    }
+
+    const hasInvalidAmount = sanitizedAllocations.some(
+      (allocation) => Number.isNaN(allocation.amount) || allocation.amount < 0
+    );
+
+    if (hasInvalidAmount) {
+      return res.status(400).json({
+        message: "All allocation amounts must be valid non-negative numbers"
+      });
+    }
+
+    const totalManagedBudget = sanitizedAllocations.reduce(
+      (sum, allocation) => sum + allocation.amount,
+      0
+    );
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: {
+          id: userId
+        },
+        data: {
+          managedBudget: totalManagedBudget,
+          monthlyBudget: totalManagedBudget
+        }
+      }),
+      prisma.budgetAllocation.deleteMany({
+        where: {
+          userId
+        }
+      }),
+      prisma.budgetAllocation.createMany({
+        data: sanitizedAllocations.map((allocation) => ({
+          userId,
+          category: allocation.category,
+          amount: allocation.amount
+        }))
+      })
+    ]);
+
+    const updatedUser = await prisma.user.findUnique({
+      where: {
+        id: userId
+      },
+      include: {
+        budgetAllocations: {
+          orderBy: {
+            category: "asc"
+          }
+        }
+      }
+    });
+
+    return res.status(200).json({
+      message: "Budget allocations updated successfully",
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while updating budget allocations"
     });
   }
 };
@@ -248,7 +383,11 @@ export const uploadProfileImage = async (req: Request, res: Response) => {
         profileImage: uploadResult.secure_url
       },
       include: {
-        budgetAllocations: true
+        budgetAllocations: {
+          orderBy: {
+            category: "asc"
+          }
+        }
       }
     });
 
@@ -307,7 +446,11 @@ export const removeProfileImage = async (req: Request, res: Response) => {
         profileImage: null
       },
       include: {
-        budgetAllocations: true
+        budgetAllocations: {
+          orderBy: {
+            category: "asc"
+          }
+        }
       }
     });
 
