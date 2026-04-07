@@ -9,7 +9,7 @@ const apnProvider = new apn.Provider({
     keyId: process.env.APN_KEY_ID!,
     teamId: process.env.APN_TEAM_ID!
   },
-  production: false
+  production: false // Set to true for production environment
 });
 
 type PushMessage = {
