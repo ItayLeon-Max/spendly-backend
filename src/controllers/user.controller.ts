@@ -347,27 +347,21 @@ export const uploadProfileImage = async (req: Request, res: Response) => {
       }
     });
 
-    const uploadResult: UploadResult = await new Promise<UploadResult>((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: "spendly/profile-images",
-          resource_type: "image",
-          public_id: `user_${userId}_${Date.now()}`
-        },
-        (error, result) => {
-          if (error || !result) {
-            reject(error ?? new Error("Cloudinary upload failed"));
-            return;
-          }
+    console.log("FILE:", file);
+    console.log("BUFFER SIZE:", file.buffer?.length);
 
-          resolve({
-            secure_url: result.secure_url
-          });
-        }
-      );
+    const result = await cloudinary.uploader.upload(
+      `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
+      {
+        folder: "spendly/profile-images",
+        resource_type: "image",
+        public_id: `user_${userId}_${Date.now()}`
+      }
+    );
 
-      streamifier.createReadStream(file.buffer).pipe(uploadStream);
-    });
+    const uploadResult: UploadResult = {
+      secure_url: result.secure_url
+    };
 
     const existingProfileImage = existingUser?.profileImage;
 
@@ -402,10 +396,11 @@ export const uploadProfileImage = async (req: Request, res: Response) => {
       user: updatedUser
     });
   } catch (error) {
-    console.error(error);
+    console.error("UPLOAD ERROR >>>", error);
 
     return res.status(500).json({
-      message: "Server error while uploading profile image"
+      message: "Server error while uploading profile image",
+      error: error instanceof Error ? error.message : error
     });
   }
 };
