@@ -16,7 +16,10 @@ import {
   acceptSharedBudgetInvite,
   declineSharedBudgetInvite,
   getMySharedBudgets,
-  deleteSharedBudget
+  deleteSharedBudget,
+  getSharedBudgetDetail,
+  getSharedBudgetExpenses,
+  addSharedBudgetExpense
 } from "../controllers/user.controller.js";
 
 const router = Router();
@@ -41,6 +44,15 @@ router.post("/shared-budgets", requireAuth, createSharedBudget);
 
 // Get all shared budgets for current user
 router.get("/shared-budgets", requireAuth, getMySharedBudgets);
+
+// Get one shared budget detail
+router.get("/shared-budgets/:sharedBudgetId", requireAuth, getSharedBudgetDetail);
+
+// Get all expenses for one shared budget
+router.get("/shared-budgets/:sharedBudgetId/expenses", requireAuth, getSharedBudgetExpenses);
+
+// Add expense to one shared budget
+router.post("/shared-budgets/:sharedBudgetId/expenses", requireAuth, addSharedBudgetExpense);
 
 // Invite a user to a shared budget (owner only)
 router.post("/shared-budgets/:sharedBudgetId/invites", requireAuth, inviteUserToSharedBudget);

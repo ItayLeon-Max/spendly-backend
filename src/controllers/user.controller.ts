@@ -26,6 +26,21 @@ type InviteToSharedBudgetInput = {
   email?: string;
 };
 
+type CreateSharedBudgetExpenseInput = {
+  title?: string;
+  amount?: number;
+  category?: string;
+  mood?: "happy" | "stressed" | "spontaneous" | "tired" | "treatingMyself" | null;
+  isNeed?: boolean;
+};
+
+type SharedBudgetExpenseSummary = {
+  totalSpent: number;
+  expenseCount: number;
+  remainingBudget: number;
+  isOverBudget: boolean;
+};
+
 const allowedBudgetCategories = [
   "food",
   "transport",
@@ -36,6 +51,42 @@ const allowedBudgetCategories = [
 ] as const;
 
 const FREE_SHARED_BUDGET_MAX_PEOPLE = 3;
+
+const allowedExpenseMoods = [
+  "happy",
+  "stressed",
+  "spontaneous",
+  "tired",
+  "treatingMyself"
+] as const;
+
+const getSharedBudgetMembership = async (sharedBudgetId: string, userId: string) => {
+  return prisma.sharedBudgetMember.findUnique({
+    where: {
+      sharedBudgetId_userId: {
+        sharedBudgetId,
+        userId
+      }
+    }
+  });
+};
+
+const calculateSharedBudgetExpenseSummary = (
+  expenses: Array<{ amount: number }>,
+  monthlyBudget: number
+): SharedBudgetExpenseSummary => {
+  const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const expenseCount = expenses.length;
+  const remainingBudget = monthlyBudget - totalSpent;
+  const isOverBudget = remainingBudget < 0;
+
+  return {
+    totalSpent,
+    expenseCount,
+    remainingBudget,
+    isOverBudget
+  };
+};
 
 // ===============================
 // GET CURRENT USER
@@ -1112,6 +1163,354 @@ export const getMySharedBudgets = async (req: Request, res: Response) => {
 
     return res.status(500).json({
       message: "Server error while fetching shared budgets"
+    });
+  }
+};
+
+// ===============================
+// GET SHARED BUDGET DETAIL
+// ===============================
+export const getSharedBudgetDetail = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const sharedBudgetId = req.params.sharedBudgetId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    if (!sharedBudgetId || typeof sharedBudgetId !== "string") {
+      return res.status(400).json({
+        message: "Invalid sharedBudgetId"
+      });
+    }
+
+    const membership = await getSharedBudgetMembership(sharedBudgetId, userId);
+
+    if (!membership) {
+      return res.status(403).json({
+        message: "You are not a member of this shared budget"
+      });
+    }
+
+    const sharedBudget = await prisma.sharedBudget.findUnique({
+      where: {
+        id: sharedBudgetId
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileImage: true,
+            monthlyBudget: true
+          }
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImage: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: "asc"
+          }
+        },
+        invites: {
+          where: {
+            status: "pending"
+          },
+          include: {
+            invitedUser: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImage: true
+              }
+            },
+            invitedByUser: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImage: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: "desc"
+          }
+        },
+        expenses: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImage: true
+              }
+            }
+          },
+          orderBy: [
+            {
+              date: "desc"
+            },
+            {
+              createdAt: "desc"
+            }
+          ]
+        }
+      }
+    });
+
+    if (!sharedBudget) {
+      return res.status(404).json({
+        message: "Shared budget not found"
+      });
+    }
+
+    const sharedBudgetMonthlyBudget = sharedBudget.owner?.monthlyBudget ?? 0;
+    const summary = calculateSharedBudgetExpenseSummary(
+      sharedBudget.expenses,
+      sharedBudgetMonthlyBudget
+    );
+
+    return res.status(200).json({
+      sharedBudget,
+      summary,
+      monthlyBudget: sharedBudgetMonthlyBudget
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while fetching shared budget detail"
+    });
+  }
+};
+
+// ===============================
+// GET SHARED BUDGET EXPENSES
+// ===============================
+export const getSharedBudgetExpenses = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const sharedBudgetId = req.params.sharedBudgetId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    if (!sharedBudgetId || typeof sharedBudgetId !== "string") {
+      return res.status(400).json({
+        message: "Invalid sharedBudgetId"
+      });
+    }
+
+    const membership = await getSharedBudgetMembership(sharedBudgetId, userId);
+
+    if (!membership) {
+      return res.status(403).json({
+        message: "You are not a member of this shared budget"
+      });
+    }
+
+    const expenses = await prisma.expense.findMany({
+      where: {
+        sharedBudgetId
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileImage: true
+          }
+        }
+      },
+      orderBy: [
+        {
+          date: "desc"
+        },
+        {
+          createdAt: "desc"
+        }
+      ]
+    });
+
+    const sharedBudget = await prisma.sharedBudget.findUnique({
+      where: {
+        id: sharedBudgetId
+      },
+      include: {
+        owner: {
+          select: {
+            monthlyBudget: true
+          }
+        }
+      }
+    });
+
+    const monthlyBudget = sharedBudget?.owner?.monthlyBudget ?? 0;
+    const summary = calculateSharedBudgetExpenseSummary(expenses, monthlyBudget);
+
+    return res.status(200).json({
+      expenses,
+      summary,
+      monthlyBudget
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while fetching shared budget expenses"
+    });
+  }
+};
+
+// ===============================
+// ADD SHARED BUDGET EXPENSE
+// ===============================
+export const addSharedBudgetExpense = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const sharedBudgetId = req.params.sharedBudgetId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    if (!sharedBudgetId || typeof sharedBudgetId !== "string") {
+      return res.status(400).json({
+        message: "Invalid sharedBudgetId"
+      });
+    }
+
+    const membership = await getSharedBudgetMembership(sharedBudgetId, userId);
+
+    if (!membership) {
+      return res.status(403).json({
+        message: "You are not a member of this shared budget"
+      });
+    }
+
+    const { title, amount, category, mood, isNeed } = req.body as CreateSharedBudgetExpenseInput;
+
+    const normalizedTitle = typeof title === "string" ? title.trim() : "";
+    const parsedAmount = Number(amount);
+    const normalizedCategory = typeof category === "string" ? category.trim().toLowerCase() : "";
+
+    if (!normalizedTitle) {
+      return res.status(400).json({
+        message: "Expense title is required"
+      });
+    }
+
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({
+        message: "Expense amount must be a valid positive number"
+      });
+    }
+
+    if (
+      !allowedBudgetCategories.includes(
+        normalizedCategory as (typeof allowedBudgetCategories)[number]
+      )
+    ) {
+      return res.status(400).json({
+        message: "Expense category is invalid"
+      });
+    }
+
+    if (
+      mood !== undefined &&
+      mood !== null &&
+      !allowedExpenseMoods.includes(mood)
+    ) {
+      return res.status(400).json({
+        message: "Expense mood is invalid"
+      });
+    }
+
+    if (isNeed !== undefined && typeof isNeed !== "boolean") {
+      return res.status(400).json({
+        message: "Expense isNeed must be a boolean"
+      });
+    }
+
+    const createdExpense = await prisma.expense.create({
+      data: {
+        title: normalizedTitle,
+        amount: parsedAmount,
+        category: normalizedCategory,
+        mood: mood ?? null,
+        isNeed: isNeed ?? true,
+        userId,
+        sharedBudgetId
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileImage: true
+          }
+        }
+      }
+    });
+
+    const expenses = await prisma.expense.findMany({
+      where: {
+        sharedBudgetId
+      },
+      select: {
+        amount: true
+      }
+    });
+
+    const sharedBudget = await prisma.sharedBudget.findUnique({
+      where: {
+        id: sharedBudgetId
+      },
+      include: {
+        owner: {
+          select: {
+            monthlyBudget: true
+          }
+        }
+      }
+    });
+
+    const monthlyBudget = sharedBudget?.owner?.monthlyBudget ?? 0;
+    const summary = calculateSharedBudgetExpenseSummary(expenses, monthlyBudget);
+
+    return res.status(201).json({
+      message: "Shared budget expense created successfully",
+      expense: createdExpense,
+      summary,
+      monthlyBudget
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while creating shared budget expense"
     });
   }
 };
