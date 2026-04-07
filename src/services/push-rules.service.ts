@@ -6,7 +6,7 @@ type SmartPushMessage = {
   body: string;
 };
 
-const PUSH_COOLDOWN_HOURS = 8;
+const PUSH_COOLDOWN_HOURS = 0;
 const MIN_BUDGET_FOR_ALERTS = 1;
 
 export class PushRulesService {
