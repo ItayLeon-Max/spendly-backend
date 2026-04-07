@@ -15,7 +15,8 @@ import {
   getMySharedBudgetInvites,
   acceptSharedBudgetInvite,
   declineSharedBudgetInvite,
-  getMySharedBudgets
+  getMySharedBudgets,
+  deleteSharedBudget
 } from "../controllers/user.controller.js";
 
 const router = Router();
@@ -52,5 +53,8 @@ router.post("/shared-budgets/invites/:inviteId/accept", requireAuth, acceptShare
 
 // Decline invite
 router.post("/shared-budgets/invites/:inviteId/decline", requireAuth, declineSharedBudgetInvite);
+
+// Delete a shared budget (owner only)
+router.delete("/shared-budgets/:sharedBudgetId", requireAuth, deleteSharedBudget);
 
 export default router;

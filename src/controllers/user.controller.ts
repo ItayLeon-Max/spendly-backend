@@ -1141,3 +1141,57 @@ const extractCloudinaryPublicId = (imageUrl: string): string | null => {
 
   return pathWithoutExtension || null;
 };
+
+// ===============================
+// DELETE SHARED BUDGET
+// ===============================
+export const deleteSharedBudget = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const sharedBudgetId = req.params.sharedBudgetId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    if (!sharedBudgetId || typeof sharedBudgetId !== "string") {
+      return res.status(400).json({
+        message: "Invalid sharedBudgetId"
+      });
+    }
+
+    const sharedBudget = await prisma.sharedBudget.findFirst({
+      where: {
+        id: sharedBudgetId,
+        ownerId: userId
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!sharedBudget) {
+      return res.status(404).json({
+        message: "Shared budget not found or you are not the owner"
+      });
+    }
+
+    await prisma.sharedBudget.delete({
+      where: {
+        id: sharedBudgetId
+      }
+    });
+
+    return res.status(200).json({
+      message: "Shared budget deleted successfully"
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while deleting shared budget"
+    });
+  }
+};
