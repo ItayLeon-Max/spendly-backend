@@ -531,6 +531,32 @@ export const updatePushSettings = async (req: Request, res: Response) => {
   }
 };
 
+// ===============================
+// SAVE PUSH TOKEN (SIMPLE ENDPOINT FOR iOS)
+// ===============================
+export const savePushToken = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { pushToken } = req.body;
+
+    if (!userId || !pushToken) {
+      return res.status(400).json({ message: "Missing data" });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        pushToken,
+        pushNotificationsEnabled: true
+      }
+    });
+
+    return res.status(200).json({ message: "Push token saved" });
+  } catch {
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 const extractCloudinaryPublicId = (imageUrl: string): string | null => {
   const marker = "/upload/";
   const markerIndex = imageUrl.indexOf(marker);
