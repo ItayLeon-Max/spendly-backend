@@ -20,7 +20,7 @@ model User {
   fullName          String
   email             String             @unique
   passwordHash      String
-  monthlyBudget     Float              @default(3000)
+  monthlyBudget     Float              @default(0)
   monthlyIncome     Float?
   managedBudget     Float?
   profileImage      String?
