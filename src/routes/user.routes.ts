@@ -8,7 +8,8 @@ import {
   updateBudgetAllocations,
   updateMonthlyBudget,
   uploadProfileImage,
-  updatePushSettings
+  updatePushSettings,
+  savePushToken
 } from "../controllers/user.controller.js";
 
 const router = Router();
@@ -21,5 +22,7 @@ router.patch("/me/push-settings", requireAuth, updatePushSettings);
 
 router.post("/me/profile-image", requireAuth, upload.single("image"), uploadProfileImage);
 router.delete("/me/profile-image", requireAuth, removeProfileImage);
+
+router.post("/me/push-token", requireAuth, savePushToken);
 
 export default router;
