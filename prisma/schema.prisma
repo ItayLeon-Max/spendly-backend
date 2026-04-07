@@ -20,52 +20,131 @@ enum AppLanguage {
   hebrew
 }
 
+enum SharedBudgetMemberRole {
+  owner
+  member
+}
+
+enum SharedBudgetInviteStatus {
+  pending
+  accepted
+  declined
+}
+
 model User {
-  id                       String             @id @default(uuid())
+  id                       String                   @id @default(uuid())
   fullName                 String
-  email                    String             @unique
+  email                    String                   @unique
   passwordHash             String
-  monthlyBudget            Float              @default(0)
+  monthlyBudget            Float                    @default(0)
   monthlyIncome            Float?
   managedBudget            Float?
   profileImage             String?
 
-  pushToken                String?            @db.Text
-  pushNotificationsEnabled Boolean            @default(true)
-  preferredLanguage        AppLanguage        @default(english)
+  pushToken                String?                  @db.Text
+  pushNotificationsEnabled Boolean                  @default(true)
+  preferredLanguage        AppLanguage              @default(english)
   lastPushSentAt           DateTime?
-  createdAt                DateTime           @default(now())
+  createdAt                DateTime                 @default(now())
 
   expenses                 Expense[]
   budgetAllocations        BudgetAllocation[]
+
+  ownedSharedBudgets       SharedBudget[]           @relation("SharedBudgetOwner")
+  sharedBudgetMemberships  SharedBudgetMember[]
+  sentSharedBudgetInvites  SharedBudgetInvite[]     @relation("SharedBudgetInviteSender")
+  receivedSharedBudgetInvites SharedBudgetInvite[]  @relation("SharedBudgetInviteRecipient")
+}
+
+model SharedBudget {
+  id                String                @id @default(uuid())
+  name              String
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  ownerId           String
+  owner             User                  @relation("SharedBudgetOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  members           SharedBudgetMember[]
+  invites           SharedBudgetInvite[]
+  expenses          Expense[]
+  budgetAllocations BudgetAllocation[]
+
+  @@index([ownerId])
+}
+
+model SharedBudgetMember {
+  id              String                  @id @default(uuid())
+  role            SharedBudgetMemberRole  @default(member)
+  createdAt       DateTime                @default(now())
+
+  sharedBudgetId  String
+  sharedBudget    SharedBudget            @relation(fields: [sharedBudgetId], references: [id], onDelete: Cascade)
+
+  userId          String
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sharedBudgetId, userId])
+  @@index([sharedBudgetId])
+  @@index([userId])
+}
+
+model SharedBudgetInvite {
+  id              String                    @id @default(uuid())
+  status          SharedBudgetInviteStatus  @default(pending)
+  createdAt       DateTime                  @default(now())
+  respondedAt     DateTime?
+
+  sharedBudgetId  String
+  sharedBudget    SharedBudget              @relation(fields: [sharedBudgetId], references: [id], onDelete: Cascade)
+
+  invitedByUserId String
+  invitedByUser   User                      @relation("SharedBudgetInviteSender", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  invitedUserId   String
+  invitedUser     User                      @relation("SharedBudgetInviteRecipient", fields: [invitedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([sharedBudgetId, invitedUserId])
+  @@index([sharedBudgetId])
+  @@index([invitedByUserId])
+  @@index([invitedUserId])
+  @@index([status])
 }
 
 model Expense {
-  id         String       @id @default(uuid())
-  title      String
-  amount     Float
-  category   String
-  mood       ExpenseMood?
-  isNeed     Boolean      @default(true)
-  date       DateTime     @default(now())
-  createdAt  DateTime     @default(now())
+  id              String        @id @default(uuid())
+  title           String
+  amount          Float
+  category        String
+  mood            ExpenseMood?
+  isNeed          Boolean       @default(true)
+  date            DateTime      @default(now())
+  createdAt       DateTime      @default(now())
 
-  userId     String
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sharedBudgetId  String?
+  sharedBudget    SharedBudget? @relation(fields: [sharedBudgetId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([sharedBudgetId])
 }
 
 model BudgetAllocation {
-  id         String   @id @default(uuid())
-  category   String
-  amount     Float
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id              String        @id @default(uuid())
+  category        String
+  amount          Float
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, category])
+  sharedBudgetId  String?
+  sharedBudget    SharedBudget? @relation(fields: [sharedBudgetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category, sharedBudgetId])
   @@index([userId])
+  @@index([sharedBudgetId])
 }

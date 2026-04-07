@@ -18,6 +18,14 @@ type UpdatePushSettingsInput = {
   preferredLanguage?: "english" | "hebrew";
 };
 
+type CreateSharedBudgetInput = {
+  name?: string;
+};
+
+type InviteToSharedBudgetInput = {
+  email?: string;
+};
+
 const allowedBudgetCategories = [
   "food",
   "transport",
@@ -26,6 +34,8 @@ const allowedBudgetCategories = [
   "entertainment",
   "health"
 ] as const;
+
+const FREE_SHARED_BUDGET_MAX_PEOPLE = 3;
 
 // ===============================
 // GET CURRENT USER
@@ -549,6 +559,560 @@ export const savePushToken = async (req: Request, res: Response) => {
     return res.status(200).json({ message: "Push token saved" });
   } catch {
     return res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ===============================
+// CREATE SHARED BUDGET
+// ===============================
+export const createSharedBudget = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    const { name } = req.body as CreateSharedBudgetInput;
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+
+    if (!trimmedName) {
+      return res.status(400).json({
+        message: "Shared budget name is required"
+      });
+    }
+
+    const sharedBudget = await prisma.sharedBudget.create({
+      data: {
+        name: trimmedName,
+        ownerId: userId,
+        members: {
+          create: {
+            userId,
+            role: "owner"
+          }
+        }
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileImage: true
+          }
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImage: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: "asc"
+          }
+        },
+        invites: {
+          where: {
+            status: "pending"
+          },
+          include: {
+            invitedUser: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImage: true
+              }
+            },
+            invitedByUser: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: "desc"
+          }
+        }
+      }
+    });
+
+    return res.status(201).json({
+      message: "Shared budget created successfully",
+      sharedBudget
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while creating shared budget"
+    });
+  }
+};
+
+// ===============================
+// INVITE USER TO SHARED BUDGET
+// ===============================
+export const inviteUserToSharedBudget = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const sharedBudgetId = req.params.sharedBudgetId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    if (!sharedBudgetId || typeof sharedBudgetId !== "string") {
+      return res.status(400).json({
+        message: "Invalid sharedBudgetId"
+      });
+    }
+
+    const { email } = req.body as InviteToSharedBudgetInput;
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+
+    if (!normalizedEmail) {
+      return res.status(400).json({
+        message: "Invite email is required"
+      });
+    }
+
+    const sharedBudget = await prisma.sharedBudget.findFirst({
+      where: {
+        id: sharedBudgetId,
+        ownerId: userId
+      },
+      include: {
+        members: true,
+        invites: {
+          where: {
+            status: "pending"
+          }
+        }
+      }
+    });
+
+    if (!sharedBudget) {
+      return res.status(404).json({
+        message: "Shared budget not found"
+      });
+    }
+
+    const invitedUser = await prisma.user.findUnique({
+      where: {
+        email: normalizedEmail
+      },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        profileImage: true
+      }
+    });
+
+    if (!invitedUser) {
+      return res.status(404).json({
+        message: "User with this email was not found"
+      });
+    }
+
+    if (invitedUser.id === userId) {
+      return res.status(400).json({
+        message: "You cannot invite yourself"
+      });
+    }
+
+    const isAlreadyMember = sharedBudget.members.some((member) => member.userId === invitedUser.id);
+
+    if (isAlreadyMember) {
+      return res.status(400).json({
+        message: "This user is already part of the shared budget"
+      });
+    }
+
+    const hasPendingInvite = sharedBudget.invites.some(
+      (invite) => invite.invitedUserId === invitedUser.id
+    );
+
+    if (hasPendingInvite) {
+      return res.status(400).json({
+        message: "This user already has a pending invitation"
+      });
+    }
+
+    const currentPeopleCount = sharedBudget.members.length + sharedBudget.invites.length;
+
+    if (currentPeopleCount >= FREE_SHARED_BUDGET_MAX_PEOPLE) {
+      return res.status(400).json({
+        message: "Free shared budgets are limited to 3 people"
+      });
+    }
+
+    const invite = await prisma.sharedBudgetInvite.create({
+      data: {
+        sharedBudgetId,
+        invitedByUserId: userId,
+        invitedUserId: invitedUser.id,
+        status: "pending"
+      },
+      include: {
+        invitedUser: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileImage: true
+          }
+        },
+        invitedByUser: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true
+          }
+        },
+        sharedBudget: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    return res.status(201).json({
+      message: "Invitation sent successfully",
+      invite
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while inviting user to shared budget"
+    });
+  }
+};
+
+// ===============================
+// GET MY SHARED BUDGET INVITES
+// ===============================
+export const getMySharedBudgetInvites = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    const invites = await prisma.sharedBudgetInvite.findMany({
+      where: {
+        invitedUserId: userId,
+        status: "pending"
+      },
+      include: {
+        sharedBudget: {
+          select: {
+            id: true,
+            name: true,
+            ownerId: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        },
+        invitedByUser: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileImage: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
+
+    return res.status(200).json({
+      invites
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while fetching shared budget invites"
+    });
+  }
+};
+
+// ===============================
+// ACCEPT SHARED BUDGET INVITE
+// ===============================
+export const acceptSharedBudgetInvite = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const inviteId = req.params.inviteId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    if (!inviteId || typeof inviteId !== "string") {
+      return res.status(400).json({
+        message: "Invalid inviteId"
+      });
+    }
+
+    const invite = await prisma.sharedBudgetInvite.findFirst({
+      where: {
+        id: inviteId,
+        invitedUserId: userId
+      },
+      include: {
+        sharedBudget: {
+          include: {
+            members: true,
+            invites: {
+              where: {
+                status: "pending"
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!invite) {
+      return res.status(404).json({
+        message: "Invitation not found"
+      });
+    }
+
+    if (invite.status !== "pending") {
+      return res.status(400).json({
+        message: "This invitation has already been handled"
+      });
+    }
+
+    const existingMembership = await prisma.sharedBudgetMember.findUnique({
+      where: {
+        sharedBudgetId_userId: {
+          sharedBudgetId: invite.sharedBudgetId,
+          userId
+        }
+      }
+    });
+
+    if (existingMembership) {
+      await prisma.sharedBudgetInvite.update({
+        where: {
+          id: inviteId
+        },
+        data: {
+          status: "accepted",
+          respondedAt: new Date()
+        }
+      });
+
+      return res.status(200).json({
+        message: "Invitation accepted successfully"
+      });
+    }
+
+    const activePeopleCount = invite.sharedBudget.members.length + invite.sharedBudget.invites.length;
+
+    if (activePeopleCount > FREE_SHARED_BUDGET_MAX_PEOPLE) {
+      return res.status(400).json({
+        message: "This shared budget has reached the free limit of 3 people"
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.sharedBudgetInvite.update({
+        where: {
+          id: inviteId
+        },
+        data: {
+          status: "accepted",
+          respondedAt: new Date()
+        }
+      }),
+      prisma.sharedBudgetMember.create({
+        data: {
+          sharedBudgetId: invite.sharedBudgetId,
+          userId,
+          role: "member"
+        }
+      })
+    ]);
+
+    return res.status(200).json({
+      message: "Invitation accepted successfully"
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while accepting shared budget invite"
+    });
+  }
+};
+
+// ===============================
+// DECLINE SHARED BUDGET INVITE
+// ===============================
+export const declineSharedBudgetInvite = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const inviteId = req.params.inviteId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    if (!inviteId || typeof inviteId !== "string") {
+      return res.status(400).json({
+        message: "Invalid inviteId"
+      });
+    }
+
+    const invite = await prisma.sharedBudgetInvite.findFirst({
+      where: {
+        id: inviteId,
+        invitedUserId: userId
+      }
+    });
+
+    if (!invite) {
+      return res.status(404).json({
+        message: "Invitation not found"
+      });
+    }
+
+    if (invite.status !== "pending") {
+      return res.status(400).json({
+        message: "This invitation has already been handled"
+      });
+    }
+
+    await prisma.sharedBudgetInvite.update({
+      where: {
+        id: inviteId
+      },
+      data: {
+        status: "declined",
+        respondedAt: new Date()
+      }
+    });
+
+    return res.status(200).json({
+      message: "Invitation declined successfully"
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while declining shared budget invite"
+    });
+  }
+};
+
+// ===============================
+// GET MY SHARED BUDGETS
+// ===============================
+export const getMySharedBudgets = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    const sharedBudgets = await prisma.sharedBudget.findMany({
+      where: {
+        members: {
+          some: {
+            userId
+          }
+        }
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileImage: true
+          }
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImage: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: "asc"
+          }
+        },
+        invites: {
+          where: {
+            status: "pending"
+          },
+          include: {
+            invitedUser: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                profileImage: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: "desc"
+          }
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
+
+    return res.status(200).json({
+      sharedBudgets
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while fetching shared budgets"
+    });
   }
 };
 

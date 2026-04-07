@@ -9,7 +9,13 @@ import {
   updateMonthlyBudget,
   uploadProfileImage,
   updatePushSettings,
-  savePushToken
+  savePushToken,
+  createSharedBudget,
+  inviteUserToSharedBudget,
+  getMySharedBudgetInvites,
+  acceptSharedBudgetInvite,
+  declineSharedBudgetInvite,
+  getMySharedBudgets
 } from "../controllers/user.controller.js";
 
 const router = Router();
@@ -24,5 +30,27 @@ router.post("/me/profile-image", requireAuth, upload.single("image"), uploadProf
 router.delete("/me/profile-image", requireAuth, removeProfileImage);
 
 router.post("/me/push-token", requireAuth, savePushToken);
+
+// ===============================
+// SHARED BUDGET ROUTES
+// ===============================
+
+// Create a new shared budget
+router.post("/shared-budgets", requireAuth, createSharedBudget);
+
+// Get all shared budgets for current user
+router.get("/shared-budgets", requireAuth, getMySharedBudgets);
+
+// Invite a user to a shared budget (owner only)
+router.post("/shared-budgets/:sharedBudgetId/invites", requireAuth, inviteUserToSharedBudget);
+
+// Get my pending invites
+router.get("/shared-budgets/invites/me", requireAuth, getMySharedBudgetInvites);
+
+// Accept invite
+router.post("/shared-budgets/invites/:inviteId/accept", requireAuth, acceptSharedBudgetInvite);
+
+// Decline invite
+router.post("/shared-budgets/invites/:inviteId/decline", requireAuth, declineSharedBudgetInvite);
 
 export default router;
