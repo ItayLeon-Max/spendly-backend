@@ -12,6 +12,12 @@ type BudgetAllocationInput = {
   amount: number;
 };
 
+type UpdatePushSettingsInput = {
+  pushToken?: string | null;
+  pushNotificationsEnabled?: boolean;
+  preferredLanguage?: "english" | "hebrew";
+};
+
 const allowedBudgetCategories = [
   "food",
   "transport",
@@ -460,6 +466,67 @@ export const removeProfileImage = async (req: Request, res: Response) => {
 
     return res.status(500).json({
       message: "Server error while removing profile image"
+    });
+  }
+};
+
+// ===============================
+// UPDATE PUSH SETTINGS (DEVICE TOKEN + PREFERENCES)
+// ===============================
+export const updatePushSettings = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    const { pushToken, pushNotificationsEnabled, preferredLanguage } =
+      req.body as UpdatePushSettingsInput;
+
+    const updateData: any = {};
+
+    if (pushToken !== undefined) {
+      if (pushToken !== null && typeof pushToken !== "string") {
+        return res.status(400).json({ message: "Invalid pushToken" });
+      }
+      updateData.pushToken = pushToken;
+    }
+
+    if (pushNotificationsEnabled !== undefined) {
+      if (typeof pushNotificationsEnabled !== "boolean") {
+        return res.status(400).json({ message: "Invalid pushNotificationsEnabled" });
+      }
+      updateData.pushNotificationsEnabled = pushNotificationsEnabled;
+    }
+
+    if (preferredLanguage !== undefined) {
+      if (preferredLanguage !== "english" && preferredLanguage !== "hebrew") {
+        return res.status(400).json({ message: "Invalid preferredLanguage" });
+      }
+      updateData.preferredLanguage = preferredLanguage;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      include: {
+        budgetAllocations: {
+          orderBy: { category: "asc" }
+        }
+      }
+    });
+
+    return res.status(200).json({
+      message: "Push settings updated successfully",
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Server error while updating push settings"
     });
   }
 };
