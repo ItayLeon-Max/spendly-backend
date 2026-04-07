@@ -15,6 +15,7 @@ const apnProvider = new apn.Provider({
 type PushMessage = {
   title: string;
   body: string;
+  data?: Record<string, string>;
 };
 
 export class PushService {
@@ -35,6 +36,7 @@ export class PushService {
     };
     notification.sound = "default";
     notification.badge = 1;
+    notification.payload = message.data || {};
 
     try {
       const result = await apnProvider.send(notification, user.pushToken);

@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import streamifier from "streamifier";
 import { prisma } from "../config/prisma.js";
 import { cloudinary } from "../config/cloudinary.js";
+import { PushService } from "../services/push.service.js";
 
 type UploadResult = {
   secure_url: string;
@@ -769,7 +770,8 @@ export const inviteUserToSharedBudget = async (req: Request, res: Response) => {
         id: true,
         fullName: true,
         email: true,
-        profileImage: true
+        profileImage: true,
+        preferredLanguage: true
       }
     });
 
@@ -840,6 +842,22 @@ export const inviteUserToSharedBudget = async (req: Request, res: Response) => {
             name: true
           }
         }
+      }
+    });
+
+    await PushService.sendToUser(invitedUser.id, {
+      title:
+        invitedUser.preferredLanguage === "hebrew"
+          ? "הזמנה לתקציב משותף"
+          : "Shared Budget Invitation",
+      body:
+        invitedUser.preferredLanguage === "hebrew"
+          ? `קיבלת הזמנה להצטרף ל־${sharedBudget.name}`
+          : `You received an invitation to join ${sharedBudget.name}`,
+      data: {
+        type: "shared_budget_invite",
+        sharedBudgetId,
+        inviteId: invite.id
       }
     });
 
@@ -936,6 +954,13 @@ export const acceptSharedBudgetInvite = async (req: Request, res: Response) => {
         invitedUserId: userId
       },
       include: {
+        invitedByUser: {
+          select: {
+            id: true,
+            fullName: true,
+            preferredLanguage: true
+          }
+        },
         sharedBudget: {
           include: {
             members: true,
@@ -1012,6 +1037,30 @@ export const acceptSharedBudgetInvite = async (req: Request, res: Response) => {
         }
       })
     ]);
+
+    const acceptingUser = await prisma.user.findUnique({
+      where: {
+        id: userId
+      },
+      select: {
+        fullName: true
+      }
+    });
+
+    await PushService.sendToUser(invite.invitedByUser.id, {
+      title:
+        invite.invitedByUser.preferredLanguage === "hebrew"
+          ? "ההזמנה אושרה"
+          : "Invitation Accepted",
+      body:
+        invite.invitedByUser.preferredLanguage === "hebrew"
+          ? `${acceptingUser?.fullName ?? "משתמש"} אישר את ההזמנה לתקציב המשותף`
+          : `${acceptingUser?.fullName ?? "A user"} accepted your shared budget invitation`,
+      data: {
+        type: "shared_budget_invite_accepted",
+        sharedBudgetId: invite.sharedBudgetId
+      }
+    });
 
     return res.status(200).json({
       message: "Invitation accepted successfully"
