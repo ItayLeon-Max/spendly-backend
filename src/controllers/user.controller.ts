@@ -21,6 +21,7 @@ type UpdatePushSettingsInput = {
 
 type CreateSharedBudgetInput = {
   name?: string;
+  totalBudget?: number;
 };
 
 type InviteToSharedBudgetInput = {
@@ -627,8 +628,9 @@ export const createSharedBudget = async (req: Request, res: Response) => {
       });
     }
 
-    const { name } = req.body as CreateSharedBudgetInput;
+    const { name, totalBudget } = req.body as CreateSharedBudgetInput;
     const trimmedName = typeof name === "string" ? name.trim() : "";
+    const parsedTotalBudget = Number(totalBudget);
 
     if (!trimmedName) {
       return res.status(400).json({
@@ -636,9 +638,16 @@ export const createSharedBudget = async (req: Request, res: Response) => {
       });
     }
 
+    if (Number.isNaN(parsedTotalBudget) || parsedTotalBudget <= 0) {
+      return res.status(400).json({
+        message: "Shared budget totalBudget must be a valid positive number"
+      });
+    }
+
     const sharedBudget = await prisma.sharedBudget.create({
       data: {
         name: trimmedName,
+        totalBudget: parsedTotalBudget,
         ownerId: userId,
         members: {
           create: {
@@ -1254,8 +1263,7 @@ export const getSharedBudgetDetail = async (req: Request, res: Response) => {
             id: true,
             fullName: true,
             email: true,
-            profileImage: true,
-            monthlyBudget: true
+            profileImage: true
           }
         },
         members: {
@@ -1327,8 +1335,7 @@ export const getSharedBudgetDetail = async (req: Request, res: Response) => {
         message: "Shared budget not found"
       });
     }
-
-    const sharedBudgetMonthlyBudget = sharedBudget.owner?.monthlyBudget ?? 0;
+    const sharedBudgetMonthlyBudget = sharedBudget.totalBudget;
     const summary = calculateSharedBudgetExpenseSummary(
       sharedBudget.expenses,
       sharedBudgetMonthlyBudget
@@ -1404,16 +1411,12 @@ export const getSharedBudgetExpenses = async (req: Request, res: Response) => {
       where: {
         id: sharedBudgetId
       },
-      include: {
-        owner: {
-          select: {
-            monthlyBudget: true
-          }
-        }
+      select: {
+        totalBudget: true
       }
     });
 
-    const monthlyBudget = sharedBudget?.owner?.monthlyBudget ?? 0;
+    const monthlyBudget = sharedBudget?.totalBudget ?? 0;
     const summary = calculateSharedBudgetExpenseSummary(expenses, monthlyBudget);
 
     return res.status(200).json({
@@ -1537,16 +1540,12 @@ export const addSharedBudgetExpense = async (req: Request, res: Response) => {
       where: {
         id: sharedBudgetId
       },
-      include: {
-        owner: {
-          select: {
-            monthlyBudget: true
-          }
-        }
+      select: {
+        totalBudget: true
       }
     });
 
-    const monthlyBudget = sharedBudget?.owner?.monthlyBudget ?? 0;
+    const monthlyBudget = sharedBudget?.totalBudget ?? 0;
     const summary = calculateSharedBudgetExpenseSummary(expenses, monthlyBudget);
 
     return res.status(201).json({
