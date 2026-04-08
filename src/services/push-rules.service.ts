@@ -11,6 +11,7 @@ const MIN_BUDGET_FOR_ALERTS = 1;
 
 export class PushRulesService {
   static async runSmartPushCycle() {
+    console.log("🚀 Running smart push cycle...");
     const users = await prisma.user.findMany({
       where: {
         pushToken: { not: null },
@@ -24,14 +25,17 @@ export class PushRulesService {
         }
       }
     });
+    console.log("👥 Users found for smart push:", users.length);
 
     for (const user of users) {
+      console.log("➡️ Checking user:", user.id);
       const shouldSkipForCooldown =
         user.lastPushSentAt &&
         Date.now() - new Date(user.lastPushSentAt).getTime() <
           PUSH_COOLDOWN_HOURS * 60 * 60 * 1000;
 
       if (shouldSkipForCooldown) {
+        console.log("⏳ Skipping user בגלל cooldown:", user.id);
         continue;
       }
 
@@ -42,15 +46,19 @@ export class PushRulesService {
       });
 
       if (!message) {
+        console.log("⏭ Skipping user because no smart push message matched:", user.id);
         continue;
       }
 
+      console.log("📤 Sending smart push to user:", user.id);
+      console.log("📝 Smart push payload:", message);
       await PushService.sendToUser(user.id, message);
 
       await prisma.user.update({
         where: { id: user.id },
         data: { lastPushSentAt: new Date() }
       });
+      console.log("✅ Updated lastPushSentAt for user:", user.id);
     }
   }
 
