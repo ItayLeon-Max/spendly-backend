@@ -28,6 +28,12 @@ type InviteToSharedBudgetInput = {
   email?: string;
 };
 
+type CreateUserCustomCategoryInput = {
+  name?: string;
+  icon?: string;
+  iconBackgroundColor?: string;
+};
+
 type CreateSharedBudgetExpenseInput = {
   title?: string;
   amount?: number;
@@ -61,6 +67,10 @@ const allowedExpenseMoods = [
   "tired",
   "treatingMyself"
 ] as const;
+
+const normalizeCustomCategoryName = (value: string) => {
+  return value.trim().replace(/\s+/g, " ");
+};
 
 const getSharedBudgetMembership = async (sharedBudgetId: string, userId: string) => {
   return prisma.sharedBudgetMember.findUnique({
@@ -612,6 +622,125 @@ export const savePushToken = async (req: Request, res: Response) => {
     return res.status(200).json({ message: "Push token saved" });
   } catch {
     return res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ===============================
+// GET MY CUSTOM CATEGORIES
+// ===============================
+export const getMyCustomCategories = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    const customCategories = await prisma.userCustomCategory.findMany({
+      where: {
+        userId
+      },
+      orderBy: [
+        {
+          createdAt: "asc"
+        },
+        {
+          name: "asc"
+        }
+      ]
+    });
+
+    return res.status(200).json({
+      customCategories
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while fetching custom categories"
+    });
+  }
+};
+
+// ===============================
+// CREATE CUSTOM CATEGORY
+// ===============================
+export const createCustomCategory = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized"
+      });
+    }
+
+    const { name, icon, iconBackgroundColor } = req.body as CreateUserCustomCategoryInput;
+
+    const normalizedName = typeof name === "string" ? normalizeCustomCategoryName(name) : "";
+    const normalizedIcon = typeof icon === "string" ? icon.trim() : "";
+    const normalizedIconBackgroundColor =
+      typeof iconBackgroundColor === "string" ? iconBackgroundColor.trim() : "";
+
+    if (!normalizedName) {
+      return res.status(400).json({
+        message: "Custom category name is required"
+      });
+    }
+
+    if (!normalizedIcon) {
+      return res.status(400).json({
+        message: "Custom category icon is required"
+      });
+    }
+
+    if (!normalizedIconBackgroundColor) {
+      return res.status(400).json({
+        message: "Custom category iconBackgroundColor is required"
+      });
+    }
+
+    const existingCategories = await prisma.userCustomCategory.findMany({
+      where: {
+        userId
+      },
+      select: {
+        id: true,
+        name: true
+      }
+    });
+
+    const existingCategory = existingCategories.find(
+      (category) => category.name.trim().toLowerCase() === normalizedName.toLowerCase()
+    );
+
+    if (existingCategory) {
+      return res.status(409).json({
+        message: "A custom category with this name already exists"
+      });
+    }
+
+    const customCategory = await prisma.userCustomCategory.create({
+      data: {
+        userId,
+        name: normalizedName,
+        icon: normalizedIcon,
+        iconBackgroundColor: normalizedIconBackgroundColor
+      }
+    });
+
+    return res.status(201).json({
+      message: "Custom category created successfully",
+      customCategory
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      message: "Server error while creating custom category"
+    });
   }
 };
 

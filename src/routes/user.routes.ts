@@ -10,6 +10,8 @@ import {
   uploadProfileImage,
   updatePushSettings,
   savePushToken,
+  getMyCustomCategories,
+  createCustomCategory,
   createSharedBudget,
   inviteUserToSharedBudget,
   getMySharedBudgetInvites,
@@ -33,7 +35,14 @@ router.patch("/me/push-settings", requireAuth, updatePushSettings);
 router.post("/me/profile-image", requireAuth, upload.single("image"), uploadProfileImage);
 router.delete("/me/profile-image", requireAuth, removeProfileImage);
 
+
 router.post("/me/push-token", requireAuth, savePushToken);
+
+// ===============================
+// CUSTOM CATEGORY ROUTES
+// ===============================
+router.get("/custom-categories", requireAuth, getMyCustomCategories);
+router.post("/custom-categories", requireAuth, createCustomCategory);
 
 // ===============================
 // SHARED BUDGET ROUTES
