@@ -29,6 +29,7 @@ export class PushService {
     }
 
     const notification = new apn.Notification();
+    (notification as any).pushType = "alert";
     notification.topic = process.env.APN_BUNDLE_ID!;
     notification.alert = {
       title: message.title,
@@ -41,13 +42,8 @@ export class PushService {
     try {
       const result = await apnProvider.send(notification, user.pushToken);
 
-      if (result.failed.length > 0) {
-        console.error("APNs failed:", result.failed);
-      }
-
-      if (result.sent.length > 0) {
-        console.log("APNs sent successfully:", result.sent.length);
-      }
+      console.log("APNs sent:", result.sent);
+      console.log("APNs failed:", result.failed);
     } catch (error) {
       console.error("Push send error:", error);
     }
