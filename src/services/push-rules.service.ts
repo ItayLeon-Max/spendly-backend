@@ -8,6 +8,9 @@ type SmartPushMessage = {
 
 const PUSH_COOLDOWN_HOURS = 3;
 const MIN_BUDGET_FOR_ALERTS = 1;
+const ENGAGEMENT_PUSH_START_HOUR = 12;
+const ENGAGEMENT_PUSH_END_HOUR = 21;
+const MIN_EXPENSES_FOR_REENGAGEMENT = 1;
 
 export class PushRulesService {
   static async runSmartPushCycle() {
@@ -94,6 +97,11 @@ export class PushRulesService {
     const weekSpent = weekExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
     const hasNoExpensesToday = todayExpenses.length === 0;
+    const hasAnyExpenses = expenses.length >= MIN_EXPENSES_FOR_REENGAGEMENT;
+    const currentHour = now.getHours();
+    const isEngagementWindow =
+      currentHour >= ENGAGEMENT_PUSH_START_HOUR &&
+      currentHour <= ENGAGEMENT_PUSH_END_HOUR;
     const hasBudget = monthlyBudget >= MIN_BUDGET_FOR_ALERTS;
 
     if (hasBudget && monthSpent >= monthlyBudget) {
@@ -123,6 +131,16 @@ export class PushRulesService {
       }
     }
 
+    if (isEngagementWindow) {
+      if (hasNoExpensesToday) {
+        return this.randomMessage(preferredLanguage, "come_back_today");
+      }
+
+      if (hasAnyExpenses) {
+        return this.randomMessage(preferredLanguage, "engagement_nudge");
+      }
+    }
+
     return null;
   }
 
@@ -134,6 +152,8 @@ export class PushRulesService {
       | "high_week"
       | "no_log_today"
       | "smart_checkin"
+      | "come_back_today"
+      | "engagement_nudge"
   ): SmartPushMessage {
     const messages = {
       english: {
@@ -186,6 +206,34 @@ export class PushRulesService {
             title: "Tiny nudge, big value ✨",
             body: "A quick look now could save future chaos."
           }
+        ],
+        come_back_today: [
+          {
+            title: "Spendly misses you 👀",
+            body: "No expenses logged yet today. Open the app for a quick money check-in."
+          },
+          {
+            title: "Tiny check, big clarity ✨",
+            body: "A 20-second look at Spendly could help you stay ahead today."
+          },
+          {
+            title: "Quick budget pulse 📱",
+            body: "Open Spendly and see how your day is shaping up before tonight."
+          }
+        ],
+        engagement_nudge: [
+          {
+            title: "Quick Spendly moment? 💡",
+            body: "Your budget is quiet right now, which is exactly why this is a great time to check in."
+          },
+          {
+            title: "Stay one step ahead 👣",
+            body: "Open Spendly for a fast look before today turns into tomorrow’s surprise."
+          },
+          {
+            title: "Your wallet story is still unfolding 📊",
+            body: "Jump into Spendly and keep the picture clear while things are still fresh."
+          }
         ]
       },
       hebrew: {
@@ -237,6 +285,34 @@ export class PushRulesService {
           {
             title: "דחיפה קטנה, ערך גדול ✨",
             body: "בדיקה קצרה עכשיו יכולה לחסוך בלגן אחר כך."
+          }
+        ],
+        come_back_today: [
+          {
+            title: "Spendly מתגעגעת 👀",
+            body: "עוד לא נרשמו הוצאות היום. פתח את האפליקציה לבדיקה קצרה של המצב."
+          },
+          {
+            title: "בדיקה קטנה, סדר גדול ✨",
+            body: "20 שניות ב- Spendly יכולות לתת לך תמונה חדה יותר על היום שלך."
+          },
+          {
+            title: "דופק תקציבי מהיר 📱",
+            body: "כדאי לפתוח את Spendly ולראות איך היום שלך נראה לפני הערב."
+          }
+        ],
+        engagement_nudge: [
+          {
+            title: "רגע קטן עם Spendly? 💡",
+            body: "התקציב שלך שקט כרגע, וזה בדיוק הזמן המושלם לפתוח את האפליקציה ולהתעדכן."
+          },
+          {
+            title: "להישאר צעד אחד קדימה 👣",
+            body: "פתח את Spendly להצצה מהירה לפני שהיום של היום הופך להפתעה של מחר."
+          },
+          {
+            title: "הסיפור של הארנק שלך עוד נכתב 📊",
+            body: "כנס ל- Spendly ותשמור על תמונה ברורה כל עוד הכל עוד טרי בזיכרון."
           }
         ]
       }
