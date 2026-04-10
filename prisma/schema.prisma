@@ -123,10 +123,16 @@ model Expense {
   date            DateTime      @default(now())
   createdAt       DateTime      @default(now())
 
-  isRecurring         Boolean   @default(false)
-  recurringFrequency  String?
-  installmentCount    Int?
-  isOngoing           Boolean   @default(false)
+  isRecurring               Boolean   @default(false)
+  recurringFrequency        String?
+  installmentCount          Int?
+  isOngoing                 Boolean   @default(false)
+  recurringGroupId          String?
+  originalTotalAmount       Float?
+  totalInstallments         Int?
+  currentInstallmentNumber  Int?
+  remainingInstallments     Int?
+  nextRecurringDate         DateTime?
 
   userId          String
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
