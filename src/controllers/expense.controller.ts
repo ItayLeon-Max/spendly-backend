@@ -75,7 +75,9 @@ const parseRecurringFrequency = (
   return trimmedFrequency as (typeof allowedRecurringFrequencies)[number];
 };
 
-const parseOptionalPositiveInteger = (rawValue: unknown): number | null | undefined => {
+const parseOptionalPositiveInteger = (
+  rawValue: unknown
+): number | null | undefined => {
   if (rawValue === undefined) {
     return undefined;
   }
@@ -128,7 +130,6 @@ export const getExpenses = async (req: Request, res: Response) => {
       typeof req.query.category === "string" ? req.query.category.trim() : "";
 
     const sortBy = req.query.sortBy === "amount" ? "amount" : "date";
-
     const sortOrder = req.query.sortOrder === "asc" ? "asc" : "desc";
 
     const where: Prisma.ExpenseWhereInput = {
@@ -241,7 +242,12 @@ export const createExpense = async (req: Request, res: Response) => {
 
     const parsedRecurringFrequency = parseRecurringFrequency(recurringFrequency);
 
-    if (recurringFrequency !== undefined && parsedRecurringFrequency === undefined) {
+    if (
+      recurringFrequency !== undefined &&
+      recurringFrequency !== null &&
+      recurringFrequency !== "" &&
+      parsedRecurringFrequency === undefined
+    ) {
       return res.status(400).json({
         message: "recurringFrequency is invalid"
       });
@@ -249,7 +255,12 @@ export const createExpense = async (req: Request, res: Response) => {
 
     const parsedInstallmentCount = parseOptionalPositiveInteger(installmentCount);
 
-    if (installmentCount !== undefined && parsedInstallmentCount === undefined) {
+    if (
+      installmentCount !== undefined &&
+      installmentCount !== null &&
+      installmentCount !== "" &&
+      parsedInstallmentCount === undefined
+    ) {
       return res.status(400).json({
         message: "installmentCount must be a valid positive integer"
       });
@@ -264,37 +275,37 @@ export const createExpense = async (req: Request, res: Response) => {
       });
     }
 
-    if (!recurringEnabled && recurringFrequency !== undefined) {
-      return res.status(400).json({
-        message: "recurringFrequency can only be sent when isRecurring is true"
-      });
-    }
+    // Allow frontend to always send recurring fields and ignore them when recurring is disabled.
 
-    if (!recurringEnabled && installmentCount !== undefined) {
-      return res.status(400).json({
-        message: "installmentCount can only be sent when isRecurring is true"
-      });
-    }
-
-    if (!recurringEnabled && isOngoing !== undefined) {
-      return res.status(400).json({
-        message: "isOngoing can only be sent when isRecurring is true"
-      });
-    }
-
-    if (parsedRecurringFrequency === "monthly" && recurringOngoing && parsedInstallmentCount !== null && parsedInstallmentCount !== undefined) {
+    if (
+      parsedRecurringFrequency === "monthly" &&
+      recurringOngoing &&
+      parsedInstallmentCount !== null &&
+      parsedInstallmentCount !== undefined
+    ) {
       return res.status(400).json({
         message: "installmentCount cannot be sent for ongoing monthly recurring expenses"
       });
     }
 
-    if (parsedRecurringFrequency === "monthly" && !recurringOngoing && parsedInstallmentCount === null) {
+    if (
+      recurringEnabled &&
+      parsedRecurringFrequency === "monthly" &&
+      !recurringOngoing &&
+      parsedInstallmentCount === null
+    ) {
       return res.status(400).json({
         message: "installmentCount is required for monthly installment recurring expenses"
       });
     }
 
-    if (parsedRecurringFrequency === "weekly" && installmentCount !== undefined) {
+    if (
+      recurringEnabled &&
+      parsedRecurringFrequency === "weekly" &&
+      installmentCount !== undefined &&
+      installmentCount !== null &&
+      installmentCount !== ""
+    ) {
       return res.status(400).json({
         message: "installmentCount is only supported for monthly recurring expenses"
       });
@@ -313,12 +324,13 @@ export const createExpense = async (req: Request, res: Response) => {
       parsedRecurringFrequency === "monthly" &&
       !recurringOngoing &&
       parsedInstallmentCount !== null &&
-      parsedInstallmentCount !== undefined;
+      parsedInstallmentCount !== undefined &&
+      parsedInstallmentCount > 1;
 
     const recurringGroupId = recurringEnabled ? randomUUID() : null;
 
     const firstInstallmentAmount = isMonthlyInstallmentPlan
-      ? roundCurrencyAmount(parsedAmount / parsedInstallmentCount)
+      ? roundCurrencyAmount(parsedAmount / parsedInstallmentCount!)
       : parsedAmount;
 
     const nextRecurringDate = recurringEnabled
@@ -327,7 +339,7 @@ export const createExpense = async (req: Request, res: Response) => {
         : addMonths(expenseDate, 1)
       : null;
 
-    const createData: Prisma.ExpenseCreateInput = {
+    const createData = {
       title: String(title).trim(),
       amount: firstInstallmentAmount,
       category: String(category).trim(),
@@ -345,7 +357,7 @@ export const createExpense = async (req: Request, res: Response) => {
       totalInstallments: isMonthlyInstallmentPlan ? parsedInstallmentCount : null,
       currentInstallmentNumber: isMonthlyInstallmentPlan ? 1 : null,
       remainingInstallments: isMonthlyInstallmentPlan
-        ? parsedInstallmentCount - 1
+        ? parsedInstallmentCount! - 1
         : null,
       nextRecurringDate,
       user: {
@@ -353,7 +365,7 @@ export const createExpense = async (req: Request, res: Response) => {
           id: req.user.userId
         }
       }
-    };
+    } as any;
 
     if (parsedMood !== undefined) {
       createData.mood = parsedMood;
@@ -413,7 +425,7 @@ export const updateExpense = async (req: Request, res: Response) => {
       });
     }
 
-    const updateData: Prisma.ExpenseUpdateInput = {};
+    const updateData: Record<string, unknown> = {};
 
     if (title !== undefined) {
       const cleanTitle = String(title).trim();
@@ -485,26 +497,36 @@ export const updateExpense = async (req: Request, res: Response) => {
 
     const parsedRecurringFrequency = parseRecurringFrequency(recurringFrequency);
 
-    if (recurringFrequency !== undefined) {
-      if (parsedRecurringFrequency === undefined) {
-        return res.status(400).json({
-          message: "recurringFrequency is invalid"
-        });
-      }
+    if (
+      recurringFrequency !== undefined &&
+      recurringFrequency !== null &&
+      recurringFrequency !== "" &&
+      parsedRecurringFrequency === undefined
+    ) {
+      return res.status(400).json({
+        message: "recurringFrequency is invalid"
+      });
+    }
 
-      updateData.recurringFrequency = parsedRecurringFrequency;
+    if (recurringFrequency !== undefined) {
+      updateData.recurringFrequency = parsedRecurringFrequency ?? null;
     }
 
     const parsedInstallmentCount = parseOptionalPositiveInteger(installmentCount);
 
-    if (installmentCount !== undefined) {
-      if (parsedInstallmentCount === undefined) {
-        return res.status(400).json({
-          message: "installmentCount must be a valid positive integer"
-        });
-      }
+    if (
+      installmentCount !== undefined &&
+      installmentCount !== null &&
+      installmentCount !== "" &&
+      parsedInstallmentCount === undefined
+    ) {
+      return res.status(400).json({
+        message: "installmentCount must be a valid positive integer"
+      });
+    }
 
-      updateData.installmentCount = parsedInstallmentCount;
+    if (installmentCount !== undefined) {
+      updateData.installmentCount = parsedInstallmentCount ?? null;
     }
 
     const effectiveIsRecurring =
@@ -512,7 +534,7 @@ export const updateExpense = async (req: Request, res: Response) => {
 
     const effectiveRecurringFrequency =
       recurringFrequency !== undefined
-        ? parsedRecurringFrequency
+        ? parsedRecurringFrequency ?? null
         : existingExpense.recurringFrequency;
 
     const effectiveIsOngoing =
@@ -520,7 +542,7 @@ export const updateExpense = async (req: Request, res: Response) => {
 
     const effectiveInstallmentCount =
       installmentCount !== undefined
-        ? parsedInstallmentCount
+        ? parsedInstallmentCount ?? null
         : existingExpense.installmentCount;
 
     if (effectiveIsRecurring && !effectiveRecurringFrequency) {
@@ -529,23 +551,7 @@ export const updateExpense = async (req: Request, res: Response) => {
       });
     }
 
-    if (!effectiveIsRecurring && recurringFrequency !== undefined) {
-      return res.status(400).json({
-        message: "recurringFrequency can only be sent when isRecurring is true"
-      });
-    }
-
-    if (!effectiveIsRecurring && installmentCount !== undefined) {
-      return res.status(400).json({
-        message: "installmentCount can only be sent when isRecurring is true"
-      });
-    }
-
-    if (!effectiveIsRecurring && isOngoing !== undefined) {
-      return res.status(400).json({
-        message: "isOngoing can only be sent when isRecurring is true"
-      });
-    }
+    // Allow frontend to always send recurring fields and ignore them when recurring is disabled.
 
     if (
       effectiveRecurringFrequency === "monthly" &&
@@ -559,6 +565,7 @@ export const updateExpense = async (req: Request, res: Response) => {
     }
 
     if (
+      effectiveIsRecurring &&
       effectiveRecurringFrequency === "monthly" &&
       !effectiveIsOngoing &&
       effectiveInstallmentCount === null
@@ -568,7 +575,13 @@ export const updateExpense = async (req: Request, res: Response) => {
       });
     }
 
-    if (effectiveRecurringFrequency === "weekly" && installmentCount !== undefined) {
+    if (
+      effectiveIsRecurring &&
+      effectiveRecurringFrequency === "weekly" &&
+      installmentCount !== undefined &&
+      installmentCount !== null &&
+      installmentCount !== ""
+    ) {
       return res.status(400).json({
         message: "installmentCount is only supported for monthly recurring expenses"
       });
@@ -601,11 +614,14 @@ export const updateExpense = async (req: Request, res: Response) => {
       effectiveRecurringFrequency === "monthly" &&
       !effectiveIsOngoing &&
       effectiveInstallmentCount !== null &&
-      effectiveInstallmentCount !== undefined;
+      effectiveInstallmentCount !== undefined &&
+      effectiveInstallmentCount > 1;
 
     if (amount !== undefined && monthlyInstallmentPlanAfterUpdate) {
       updateData.originalTotalAmount = Number(amount);
-      updateData.amount = roundCurrencyAmount(Number(amount) / effectiveInstallmentCount);
+      updateData.amount = roundCurrencyAmount(
+        Number(amount) / effectiveInstallmentCount
+      );
       updateData.totalInstallments = effectiveInstallmentCount;
 
       if (existingExpense.currentInstallmentNumber === null) {
@@ -624,7 +640,7 @@ export const updateExpense = async (req: Request, res: Response) => {
       where: {
         id: expenseId
       },
-      data: updateData
+      data: updateData as any
     });
 
     return res.status(200).json(updatedExpense);
