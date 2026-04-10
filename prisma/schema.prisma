@@ -123,6 +123,11 @@ model Expense {
   date            DateTime      @default(now())
   createdAt       DateTime      @default(now())
 
+  isRecurring         Boolean   @default(false)
+  recurringFrequency  String?
+  installmentCount    Int?
+  isOngoing           Boolean   @default(false)
+
   userId          String
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 

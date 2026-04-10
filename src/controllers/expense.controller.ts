@@ -10,6 +10,8 @@ const allowedMoods = [
   "treatingMyself"
 ] as const;
 
+const allowedRecurringFrequencies = ["weekly", "monthly"] as const;
+
 const getExpenseIdFromParams = (req: Request): string | null => {
   const rawExpenseId = req.params.expenseId;
 
@@ -42,6 +44,52 @@ const parseMood = (
   }
 
   return trimmedMood as (typeof allowedMoods)[number];
+};
+
+const parseRecurringFrequency = (
+  rawFrequency: unknown
+): (typeof allowedRecurringFrequencies)[number] | null | undefined => {
+  if (rawFrequency === undefined) {
+    return undefined;
+  }
+
+  if (rawFrequency === null || rawFrequency === "") {
+    return null;
+  }
+
+  if (typeof rawFrequency !== "string") {
+    return undefined;
+  }
+
+  const trimmedFrequency = rawFrequency.trim().toLowerCase();
+
+  if (
+    !allowedRecurringFrequencies.includes(
+      trimmedFrequency as (typeof allowedRecurringFrequencies)[number]
+    )
+  ) {
+    return undefined;
+  }
+
+  return trimmedFrequency as (typeof allowedRecurringFrequencies)[number];
+};
+
+const parseOptionalPositiveInteger = (rawValue: unknown): number | null | undefined => {
+  if (rawValue === undefined) {
+    return undefined;
+  }
+
+  if (rawValue === null || rawValue === "") {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+
+  if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+    return undefined;
+  }
+
+  return parsedValue;
 };
 
 export const getExpenses = async (req: Request, res: Response) => {
@@ -121,7 +169,18 @@ export const createExpense = async (req: Request, res: Response) => {
       });
     }
 
-    const { title, amount, category, mood, isNeed, date } = req.body;
+    const {
+      title,
+      amount,
+      category,
+      mood,
+      isNeed,
+      date,
+      isRecurring,
+      recurringFrequency,
+      installmentCount,
+      isOngoing
+    } = req.body;
 
     if (!title || amount === undefined || !category) {
       return res.status(400).json({
@@ -151,12 +210,92 @@ export const createExpense = async (req: Request, res: Response) => {
       });
     }
 
+    if (isRecurring !== undefined && typeof isRecurring !== "boolean") {
+      return res.status(400).json({
+        message: "isRecurring must be a boolean"
+      });
+    }
+
+    if (isOngoing !== undefined && typeof isOngoing !== "boolean") {
+      return res.status(400).json({
+        message: "isOngoing must be a boolean"
+      });
+    }
+
+    const parsedRecurringFrequency = parseRecurringFrequency(recurringFrequency);
+
+    if (recurringFrequency !== undefined && parsedRecurringFrequency === undefined) {
+      return res.status(400).json({
+        message: "recurringFrequency is invalid"
+      });
+    }
+
+    const parsedInstallmentCount = parseOptionalPositiveInteger(installmentCount);
+
+    if (installmentCount !== undefined && parsedInstallmentCount === undefined) {
+      return res.status(400).json({
+        message: "installmentCount must be a valid positive integer"
+      });
+    }
+
+    const recurringEnabled = isRecurring === true;
+    const recurringOngoing = isOngoing === true;
+
+    if (recurringEnabled && !parsedRecurringFrequency) {
+      return res.status(400).json({
+        message: "recurringFrequency is required when isRecurring is true"
+      });
+    }
+
+    if (!recurringEnabled && recurringFrequency !== undefined) {
+      return res.status(400).json({
+        message: "recurringFrequency can only be sent when isRecurring is true"
+      });
+    }
+
+    if (!recurringEnabled && installmentCount !== undefined) {
+      return res.status(400).json({
+        message: "installmentCount can only be sent when isRecurring is true"
+      });
+    }
+
+    if (!recurringEnabled && isOngoing !== undefined) {
+      return res.status(400).json({
+        message: "isOngoing can only be sent when isRecurring is true"
+      });
+    }
+
+    if (parsedRecurringFrequency === "monthly" && recurringOngoing && parsedInstallmentCount !== null && parsedInstallmentCount !== undefined) {
+      return res.status(400).json({
+        message: "installmentCount cannot be sent for ongoing monthly recurring expenses"
+      });
+    }
+
+    if (parsedRecurringFrequency === "monthly" && !recurringOngoing && parsedInstallmentCount === null) {
+      return res.status(400).json({
+        message: "installmentCount is required for monthly installment recurring expenses"
+      });
+    }
+
+    if (parsedRecurringFrequency === "weekly" && installmentCount !== undefined) {
+      return res.status(400).json({
+        message: "installmentCount is only supported for monthly recurring expenses"
+      });
+    }
+
     const createData: Prisma.ExpenseCreateInput = {
       title: String(title).trim(),
       amount: parsedAmount,
       category: String(category).trim(),
       isNeed: typeof isNeed === "boolean" ? isNeed : true,
       date: date ? new Date(date) : new Date(),
+      isRecurring: recurringEnabled,
+      recurringFrequency: recurringEnabled ? parsedRecurringFrequency ?? null : null,
+      installmentCount:
+        recurringEnabled && parsedRecurringFrequency === "monthly" && !recurringOngoing
+          ? parsedInstallmentCount ?? null
+          : null,
+      isOngoing: recurringEnabled ? recurringOngoing : false,
       user: {
         connect: {
           id: req.user.userId
@@ -196,7 +335,18 @@ export const updateExpense = async (req: Request, res: Response) => {
       });
     }
 
-    const { title, amount, category, mood, isNeed, date } = req.body;
+    const {
+      title,
+      amount,
+      category,
+      mood,
+      isNeed,
+      date,
+      isRecurring,
+      recurringFrequency,
+      installmentCount,
+      isOngoing
+    } = req.body;
 
     const existingExpense = await prisma.expense.findFirst({
       where: {
@@ -269,6 +419,50 @@ export const updateExpense = async (req: Request, res: Response) => {
       }
 
       updateData.isNeed = isNeed;
+    }
+
+    if (isRecurring !== undefined) {
+      if (typeof isRecurring !== "boolean") {
+        return res.status(400).json({
+          message: "isRecurring must be a boolean"
+        });
+      }
+
+      updateData.isRecurring = isRecurring;
+    }
+
+    const parsedRecurringFrequency = parseRecurringFrequency(recurringFrequency);
+
+    if (recurringFrequency !== undefined) {
+      if (parsedRecurringFrequency === undefined) {
+        return res.status(400).json({
+          message: "recurringFrequency is invalid"
+        });
+      }
+
+      updateData.recurringFrequency = parsedRecurringFrequency;
+    }
+
+    const parsedInstallmentCount = parseOptionalPositiveInteger(installmentCount);
+
+    if (installmentCount !== undefined) {
+      if (parsedInstallmentCount === undefined) {
+        return res.status(400).json({
+          message: "installmentCount must be a valid positive integer"
+        });
+      }
+
+      updateData.installmentCount = parsedInstallmentCount;
+    }
+
+    if (isOngoing !== undefined) {
+      if (typeof isOngoing !== "boolean") {
+        return res.status(400).json({
+          message: "isOngoing must be a boolean"
+        });
+      }
+
+      updateData.isOngoing = isOngoing;
     }
 
     if (date !== undefined) {
